@@ -33,7 +33,7 @@ public class Pi {
 
 	public static void main(String[] args) {
 		Pi pi = new Pi();
-		pi.calculate(4,10000,10000);
+		pi.calculate(4,20000,15000);
 	}
 
 	/*---------Messages-------*
@@ -136,7 +136,7 @@ public class Pi {
 		private final long start = System.currentTimeMillis();
 
 		private final ActorRef listener;
-		// private final ActorRef workerRouter;
+//		private final ActorRef workerRouter;
 
 		private final Router workerRouter;
 

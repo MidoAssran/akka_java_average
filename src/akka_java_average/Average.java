@@ -37,14 +37,15 @@ public class Average {
 	 */
 	public static void main(String[] args) {
 		Average avg = new Average();
-		avg.calculate(101);
+		int numWorkers = 2;
+		avg.calculate(numWorkers);
 	}
 	
 	public void calculate(final int nrOfWorkers) {
 		// Create an AKKA system
 		ActorSystem system = ActorSystem.create("AvgSystem");
 
-		// Create the result listener, which will print the result and subsequently shutdown the machine
+		// Create the result reporter, which will print the result and subsequently shutdown the machine
 		final ActorRef reporter = system.actorOf(Props.create(Reporter.class), "reporter");
 
 		// Create the node average computation coordinator
@@ -148,6 +149,7 @@ public class Average {
 						double newAverage = calculateAverageFor(computation.getRunningAverage(),computation.getNodesHit());
 						int newNodesHit = computation.getNodesHit() + 1;
 						peer.tell(new Compute(newAverage, newNodesHit), getSelf());
+						System.out.println("\tNode index: " + newNodesHit + "\t UID: " + uniqueId);
 					} catch (NullPointerException e) {
 						// peer was not set
 						System.out.println(e.getMessage());
@@ -170,7 +172,7 @@ public class Average {
 				this.peer = peer;
 				didSetPeer = true;
 			}
-			return !didSetPeer;
+			return !didSetPeer;		// return true for peer was not set (success), false for peer was set (failure)
 		}
 		
 		private double calculateAverageFor(double runningAverage, int nodesHit){
@@ -184,35 +186,43 @@ public class Average {
 	
 	public static class Coordinator extends UntypedActor {
 		
+		private final int minUID = 12;
+		private final int maxUID = 137;
+		
 		private final ActorRef reporter;
-		private final Router workerRouter;
-		private final int nrOfWorkers;
 		private double nodeAverage = 0;
 		private final long start = System.currentTimeMillis();				
 		private List<ActorRef> workers;
-
+		private List<Integer> workerIDs;
 		public Coordinator (final int nrOfWorkers, ActorRef reporter) {
 			this.reporter = reporter;
-			this.nrOfWorkers = nrOfWorkers;
 			
 			// create the worker nodes
 			workers = new ArrayList<ActorRef>();
-			List<Routee> routees = new ArrayList<Routee>();
-		    for (int i = 0; i < nrOfWorkers; i++) {
-		    	ActorRef r = getContext().actorOf(Props.create(Worker.class, i, getSelf()));
-				getContext().watch(r);
+			workerIDs = new ArrayList<Integer>();
+			Random random = new Random();
+			for (int i = 0; i < nrOfWorkers; i++) {
+				
+				// create a unique (random) ID for each node
+				int uid;
+				do { 
+					uid = random.nextInt(maxUID - minUID + 1) + minUID; 
+				} while (workerIDs.contains(uid));
+				workerIDs.add(uid);
+				
+				ActorRef r = getContext().actorOf(Props.create(Worker.class, uid, getSelf()));
 				workers.add(r);
-				routees.add(new ActorRefRoutee(r));
 			}
-			workerRouter = new Router(new RoundRobinRoutingLogic(), routees);
+
 		    // set peers of worker nodes
 		    for (int i = 0; i < nrOfWorkers; i++){
 		    	  ActorRef worker = workers.get(i);
 			      if (i != nrOfWorkers-1){
 			    	  ActorRef peer = workers.get(i+1);
 			    	  worker.tell(new SetPeer(peer), ActorRef.noSender());
-			      } else { // last worker in our array; set peer to be itself
-			    	  worker.tell(new SetPeer(worker), ActorRef.noSender());
+			      } else { // last worker in our array; set peer to be first (circular)
+			    	  ActorRef peer = workers.get(0);
+			    	  worker.tell(new SetPeer(peer), ActorRef.noSender());
 			      }
 		    }
 		    
